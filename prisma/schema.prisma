@@ -1,0 +1,395 @@
+// Schema Prisma para Plataforma de IA Vertical
+// Análise de Planilhas/KPIs e Relatórios Executivos
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTENTICAÇÃO E USUÁRIOS
+// ============================================
+
+model User {
+  id                String              @id @default(cuid())
+  email             String              @unique
+  password          String
+  firstName         String
+  lastName          String
+  avatar            String?
+  emailVerified     Boolean             @default(false)
+  emailVerifiedAt   DateTime?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  lastLoginAt       DateTime?
+  isActive          Boolean             @default(true)
+  
+  // Relacionamentos
+  sessions          Session[]
+  spreadsheets      Spreadsheet[]
+  reports           Report[]
+  analyses          Analysis[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  
+  // Timestamps
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  @@index([email])
+  @@index([emailVerified])
+  @@index([isActive])
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  
+  // Relacionamentos
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================
+// UPLOAD E PROCESSAMENTO DE ARQUIVOS
+// ============================================
+
+model Spreadsheet {
+  id              String            @id @default(cuid())
+  userId          String
+  originalName    String
+  fileName        String            @unique
+  filePath        String
+  fileSize        Int
+  mimeType        String
+  checksum        String
+  
+  // Metadados do arquivo
+  totalRows       Int?
+  totalColumns    Int?
+  sheetNames      String[]
+  hasHeaders      Boolean           @default(true)
+  
+  // Status de processamento
+  status          ProcessingStatus  @default(PENDING)
+  errorMessage    String?
+  
+  // Relacionamentos
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses        Analysis[]
+  reports         Report[]
+  
+  // Timestamps
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("spreadsheets")
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// ANÁLISE DE DADOS E KPIs
+// ============================================
+
+model Analysis {
+  id              String            @id @default(cuid())
+  userId          String
+  spreadsheetId   String
+  name            String
+  description     String?
+  
+  // Configurações da análise
+  selectedColumns String[]          // Colunas selecionadas para análise
+  dateColumn      String?           // Coluna de data para análise temporal
+  periodType      PeriodType?       // Tipo de período (monthly, quarterly, yearly)
+  
+  // Resultados da análise
+  kpis            Json?             // KPIs identificados e calculados
+  trends          Json?             // Tendências identificadas
+  anomalies       Json?             // Anomalias detectadas
+  insights        Json?             // Insights gerados pela IA
+  statistics      Json?             // Estatísticas gerais
+  
+  // Status
+  status          ProcessingStatus  @default(PENDING)
+  processingTime  Int?              // Tempo de processamento em segundos
+  errorMessage    String?
+  
+  // Relacionamentos
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spreadsheet     Spreadsheet       @relation(fields: [spreadsheetId], references: [id], onDelete: Cascade)
+  reports         Report[]
+  
+  // Timestamps
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  @@index([userId])
+  @@index([spreadsheetId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("analyses")
+}
+
+enum PeriodType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+// ============================================
+// RELATÓRIOS EXECUTIVOS
+// ============================================
+
+model Report {
+  id              String            @id @default(cuid())
+  userId          String
+  analysisId      String?
+  spreadsheetId   String?
+  title           String
+  description     String?
+  
+  // Configurações do relatório
+  template        ReportTemplate    @default(EXECUTIVE)
+  includeCharts   Boolean           @default(true)
+  includeInsights Boolean           @default(true)
+  includeKpis     Boolean           @default(true)
+  
+  // Conteúdo gerado
+  executiveSummary String?          // Resumo executivo
+  keyInsights      Json?            // Insights principais
+  recommendations  Json?            // Recomendações acionáveis
+  chartSuggestions Json?            // Sugestões de gráficos
+  narrative        String?          // Narrativa completa
+  
+  // Metadados
+  wordCount       Int?
+  pageCount       Int?
+  
+  // Status
+  status          ProcessingStatus  @default(PENDING)
+  generationTime  Int?              // Tempo de geração em segundos
+  errorMessage    String?
+  
+  // Relacionamentos
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis        Analysis?         @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+  spreadsheet     Spreadsheet?      @relation(fields: [spreadsheetId], references: [id], onDelete: SetNull)
+  exports         ReportExport[]
+  
+  // Timestamps
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  @@index([userId])
+  @@index([analysisId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+enum ReportTemplate {
+  EXECUTIVE
+  DETAILED
+  SUMMARY
+  CUSTOM
+}
+
+model ReportExport {
+  id          String       @id @default(cuid())
+  reportId    String
+  format      ExportFormat
+  fileName    String
+  filePath    String
+  fileSize    Int
+  
+  // Status
+  status      ProcessingStatus @default(PENDING)
+  errorMessage String?
+  
+  // Relacionamentos
+  report      Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  @@map("report_exports")
+}
+
+enum ExportFormat {
+  PDF
+  PPTX
+  DOCX
+  HTML
+}
+
+// ============================================
+// SISTEMA DE AUDITORIA
+// ============================================
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  userId      String?
+  action      AuditAction
+  resource    String      // Recurso afetado (spreadsheet, analysis, report)
+  resourceId  String?     // ID do recurso
+  details     Json?       // Detalhes da ação
+  ipAddress   String?
+  userAgent   String?
+  
+  // Relacionamentos
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  // Timestamps
+  createdAt   DateTime    @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+enum AuditAction {
+  USER_LOGIN
+  USER_LOGOUT
+  USER_REGISTER
+  USER_PASSWORD_RESET
+  SPREADSHEET_UPLOAD
+  SPREADSHEET_DELETE
+  ANALYSIS_CREATE
+  ANALYSIS_UPDATE
+  ANALYSIS_DELETE
+  REPORT_GENERATE
+  REPORT_EXPORT
+  REPORT_DELETE
+}
+
+// ============================================
+// CONFIGURAÇÕES E TEMPLATES
+// ============================================
+
+model Template {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  type        TemplateType
+  content     Json            // Estrutura do template
+  isDefault   Boolean         @default(false)
+  isActive    Boolean         @default(true)
+  
+  // Timestamps
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  
+  @@map("templates")
+}
+
+enum TemplateType {
+  REPORT
+  CHART
+  ANALYSIS
+}
+
+// ============================================
+// CONFIGURAÇÕES DO SISTEMA
+// ============================================
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  type      String   // string, number, boolean, json
+  category  String   // auth, processing, ai, export
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("system_configs")
+}
+
+// ============================================
+// CACHE DE RESULTADOS
+// ============================================
+
+model Cache {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  expiresAt DateTime
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([key])
+  @@index([expiresAt])
+  @@map("cache")
+}
+
+// ============================================
+// NOTIFICAÇÕES
+// ============================================
+
+model Notification {
+  id          String            @id @default(cuid())
+  userId      String
+  title       String
+  message     String
+  type        NotificationType
+  isRead      Boolean           @default(false)
+  data        Json?             // Dados adicionais
+  
+  // Relacionamentos
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([type])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  SUCCESS
+  ERROR
+  WARNING
+  INFO
+  ANALYSIS_COMPLETE
+  REPORT_READY
+  SYSTEM_UPDATE
+}
